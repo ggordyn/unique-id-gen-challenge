@@ -43,15 +43,6 @@ class SnowflakeConfigTest {
     }
 
     @Test
-    void rejectsEpochInTheFuture() {
-        long farFuture = System.currentTimeMillis() + 1_000_000;
-
-        assertThatThrownBy(() -> new SnowflakeConfig(farFuture, 5, 5, 12, 10))
-                .isInstanceOf(InvalidConfigurationException.class)
-                .hasMessageContaining("must not be in the future");
-    }
-
-    @Test
     void rejectsNegativeDriftTolerance() {
         assertThatThrownBy(() -> new SnowflakeConfig(0, 5, 5, 12, -1))
                 .isInstanceOf(InvalidConfigurationException.class)

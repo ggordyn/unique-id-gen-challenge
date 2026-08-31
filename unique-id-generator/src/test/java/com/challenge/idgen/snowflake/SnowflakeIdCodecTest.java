@@ -1,10 +1,12 @@
 package com.challenge.idgen.snowflake;
 
 import com.challenge.idgen.config.SnowflakeConfig;
+import com.challenge.idgen.exception.InvalidConfigurationException;
 import com.challenge.idgen.model.DecodedId;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SnowflakeIdCodecTest {
 
@@ -94,5 +96,33 @@ class SnowflakeIdCodecTest {
         long id = SnowflakeIdCodec.encode(timestamp, 31, 31, 4095, config);
 
         assertThat(id).isNotNegative();
+    }
+
+    @Test
+    void encodeRejectsTimestampBeforeEpoch() {
+        assertThatThrownBy(() -> SnowflakeIdCodec.encode(config.epochMillis() - 1, 0, 0, 0, config))
+                .isInstanceOf(InvalidConfigurationException.class)
+                .hasMessageContaining("before the epoch");
+    }
+
+    @Test
+    void encodeRejectsOutOfRangeDatacenterId() {
+        assertThatThrownBy(() -> SnowflakeIdCodec.encode(config.epochMillis(), 999999, 0, 0, config))
+                .isInstanceOf(InvalidConfigurationException.class)
+                .hasMessageContaining("datacenterId");
+    }
+
+    @Test
+    void encodeRejectsOutOfRangeWorkerId() {
+        assertThatThrownBy(() -> SnowflakeIdCodec.encode(config.epochMillis(), 0, -1, 0, config))
+                .isInstanceOf(InvalidConfigurationException.class)
+                .hasMessageContaining("workerId");
+    }
+
+    @Test
+    void encodeRejectsOutOfRangeSequence() {
+        assertThatThrownBy(() -> SnowflakeIdCodec.encode(config.epochMillis(), 0, 0, 4096, config))
+                .isInstanceOf(InvalidConfigurationException.class)
+                .hasMessageContaining("sequence");
     }
 }

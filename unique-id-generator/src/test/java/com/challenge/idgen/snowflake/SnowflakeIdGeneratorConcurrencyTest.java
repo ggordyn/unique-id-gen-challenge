@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 // We use the real SystemTimeSource to prove thread-safety against a real clock.
 class SnowflakeIdGeneratorConcurrencyTest {
 
-    private static final int THREAD_COUNT = 50_000;
+    private static final int THREAD_COUNT = 50000;
 
     @Test
     void concurrentCallsProduceNoDuplicateIds() throws InterruptedException, ExecutionException {

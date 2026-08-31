@@ -27,17 +27,20 @@ public class SnowflakeIdGenerator implements IdGenerator {
         long now = timeSource.currentTimeMillis();
 
         if (now < lastTimestamp) {
-            // Clock stepped backwards (NTP correction, VM pause): we wait out small drifts, 
-            // large ones are likely a real clock/host problem, so we fail instead of blocking.
+            // Clock stepped backwards (NTP correction, VM pause). A small drift doesn't need to
+            // block: reuse lastTimestamp and extend the sequence below. We only actually wait if that 
+            // runs out of sequence room.
+            // A large drift is likely a real clock/host problem, so fail instead of blocking.
             long drift = lastTimestamp - now;
             if (drift > config.maxBackwardDriftMillis()) {
                 throw new ClockMovedBackwardsException(drift);
             }
-            now = timeSource.waitForNextMillis(lastTimestamp);
-            sequence = 0;
-        } else if (now == lastTimestamp) {
-            // Same millisecond as the last call: +1 counter. If counter > max IDs,
-            // wait for the next ms and reset.
+            now = lastTimestamp;
+        }
+
+        if (now == lastTimestamp) {
+            // Same millisecond as the last call (or a small backward drift treated as such):
+            // +1 counter. If counter > max IDs, wait for the next ms and reset.
             sequence++;
             if (sequence > config.maxSequence()) {
                 now = timeSource.waitForNextMillis(lastTimestamp);

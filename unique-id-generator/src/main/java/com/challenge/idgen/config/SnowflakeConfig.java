@@ -33,9 +33,6 @@ public record SnowflakeConfig(
                     "datacenterIdBits + workerIdBits + sequenceBits must equal "
                             + TOTAL_NON_TIMESTAMP_BITS + ", got: " + totalBits);
         }
-        if (epochMillis > System.currentTimeMillis()) {
-            throw new InvalidConfigurationException("epochMillis must not be in the future: " + epochMillis);
-        }
         if (maxBackwardDriftMillis < 0) {
             throw new InvalidConfigurationException(
                     "maxBackwardDriftMillis must be >= 0, got: " + maxBackwardDriftMillis);

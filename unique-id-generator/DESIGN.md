@@ -41,7 +41,7 @@ Everything else is a concrete class with one job:
 |---|---|
 | `SnowflakeConfig` | Validated, immutable bit-layout settings (record) |
 | `WorkerId` | A (datacenterId, workerId) pair + range validation |
-| `SnowflakeIdCodec` | Stateless bit-packing: `encode`/`decode` |
+| `SnowflakeIdCodec` | Stateless, validated bit-packing: `encode`/`decode` |
 | `SnowflakeIdGenerator` | The only concurrency-sensitive state (last timestamp, sequence) |
 | `EnvironmentWorkerIdAssigner` | Reads `SNOWFLAKE_DATACENTER_ID`/`SNOWFLAKE_WORKER_ID` |
 | `SystemTimeSource` | Wraps `java.time.Clock` |
@@ -60,19 +60,37 @@ config change. `SnowflakeConfig.defaults()` uses the classic 5/5/12 split and a 
 being used, rather than defaulting to 1970 and wasting decades of possible timestamps.
 
 The sign bit is explicitly left at 0 purely because the other four fields' widths add up to 63 bits, one short of 64,
-following Twitter's implementation. `encode`/`decode` don't guard against the
-41-bit timestamp field overflowing (~69 years from the epoch, or a caller passing a bad
-timestamp); this is treated as a known and accepted limitation (§9).
+following Twitter's implementation. `SnowflakeIdCodec.encode()` validates each field against
+`config`'s configured bit widths and rejects a timestamp before the epoch, throwing
+`InvalidConfigurationException` rather than letting an out-of-range value silently bleed into
+an adjacent bit field and corrupt the ID. This is separate from the 41-bit timestamp field
+eventually overflowing (~69 years from the epoch), which is not guarded against at runtime and
+is treated as a known and accepted limitation (§9).
+
+`SnowflakeConfig` deliberately does *not* validate that its epoch isn't in the future, even
+though an earlier version did. That check called `System.currentTimeMillis()` directly, the
+one place in the codebase that would have bypassed the `TimeSource` seam (§2), and its only
+real purpose (catching a mistyped future epoch) is already covered by `encode()` rejecting a
+pre-epoch timestamp the moment an ID is actually minted, with an equally clear error. The
+trade-off: a misconfigured epoch now fails on first use rather than at construction/startup.
 
 ## 4. Clock-rollback handling (the main addition over the book)
 
 `SnowflakeIdGenerator.nextId()` compares each call's current time against the last timestamp
 it used, inside a `synchronized` block:
 
-- **Clock went backward, small drift** (≤ `maxBackwardDriftMillis`, default 10ms): drift is treated
-  as self-healing and we wait (`TimeSource.waitForNextMillis`) until the clock passes the
-  last timestamp, then proceed as normal. This covers routine causes: Network Time Protocol step corrections
-  after ordinary hardware clock drift, a VM's clock pause or live migration, or a leap second.
+- **Clock went backward, small drift** (≤ `maxBackwardDriftMillis`, default 10ms): rather than
+  blocking (waiting for the clock to catch up), we reuse the last timestamp and extend the sequence counter, 
+  exactly like the same-millisecond case, only falling back to an actual wait if the sequence overflows.
+  This covers routine causes: Network Time Protocol step corrections after ordinary hardware
+  clock drift, a VM's clock pause, or a leap second. The trade-off: the
+  timestamp embedded in these IDs is technically a few milliseconds ahead of the real clock at
+  the moment they're created (we deliberately choose not to block every other caller for that
+  gap). Order and uniqueness are still guaranteed via the sequence counter, but the timestamp
+  isn't perfectly literal during this narrow, bounded window. Given the book's own requirement
+  is only that IDs be "roughly ordered by time," not exact to the millisecond, this is a
+  reasonable trade for removing a guaranteed stall on every concurrent caller
+  during an otherwise harmless clock correction.
 - **Clock went backward, large drift**: fails with `ClockMovedBackwardsException` (carrying
   the observed drift in milliseconds) rather than blocking indefinitely on what's likely a real
   clock/host problem. This allows the caller to handle this potential problem.
@@ -138,7 +156,13 @@ manually reviewed and rewritten.
 
 - **41-bit timestamp overflow** (~69 years after the epoch, or a caller-supplied timestamp
   outside that range) is not guarded against at runtime, which is accepted as a known limitation
-  matching the book's own explanation.
+  matching the book's own explanation, based on Twitter's original Snowflake design. Note that
+  `SnowflakeIdCodec.decode()` extracts the timestamp with a signed right shift (`>>`), which
+  would corrupt the decoded value once the sign bit is legitimately part of the timestamp
+  ( right at the 69-year mark) rather than at the true 64-bit capacity of the field
+  (~139 years). Switching that one shift to unsigned (`>>>`) would let decoding stay correct
+  all the way to the true limit instead of degrading at the documented one. This change was not applied
+  simply because the issue would still require fixing after those years elapse.
 - **HTTP layer**: not built. `IdGenerator.nextId()` could be wrapped in
   `com.sun.net.httpserver` (or any framework) which would need no changes to the code above it.
 - **Worker-ID auto-assignment** (something like ZooKeeper or a DB lease table): not built

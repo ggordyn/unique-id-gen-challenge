@@ -80,11 +80,27 @@ class SnowflakeIdGeneratorTest {
     }
 
     @Test
-    void smallBackwardClockDriftWaitsAndSucceeds() {
+    void smallBackwardClockDriftReusesTimestampAndExtendsSequence() {
         FakeTimeSource timeSource = new FakeTimeSource(config.epochMillis() + 1000);
         SnowflakeIdGenerator generator = new SnowflakeIdGenerator(config, workerId, timeSource);
 
         generator.nextId();
+        timeSource.advanceTo(config.epochMillis() + 1000 - config.maxBackwardDriftMillis());
+
+        DecodedId decoded = SnowflakeIdCodec.decode(generator.nextId(), config);
+
+        assertThat(decoded.timestamp()).isEqualTo(config.epochMillis() + 1000);
+        assertThat(decoded.sequence()).isEqualTo(1);
+    }
+
+    @Test
+    void smallBackwardClockDriftFallsBackToWaitOnceSequenceOverflows() {
+        FakeTimeSource timeSource = new FakeTimeSource(config.epochMillis() + 1000);
+        SnowflakeIdGenerator generator = new SnowflakeIdGenerator(config, workerId, timeSource);
+
+        for (int i = 0; i <= config.maxSequence(); i++) {
+            generator.nextId();
+        }
         timeSource.advanceTo(config.epochMillis() + 1000 - config.maxBackwardDriftMillis());
 
         DecodedId decoded = SnowflakeIdCodec.decode(generator.nextId(), config);
