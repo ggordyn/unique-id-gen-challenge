@@ -140,7 +140,10 @@ That's what makes scenarios like sequence overflow and both clock-rollback branc
 easy to test. `SnowflakeIdCodecTest` includes a value hand-computed independently of the encode/decode logic itself,
 so the test proves the actual bit positions are correct rather than just that encode and decode undo each
 other. `IdGeneratorIntegrationTest` wires every real component together (real config, real env-based
-assigner, real system clock) rather than testing pieces in isolation.
+assigner, real system clock) rather than testing pieces in isolation. `SnowflakeIdGeneratorThroughputTest`
+measures the book's named "10000+ IDs/sec" requirement directly: single-threaded, against the
+real clock, asserting the actual measured rate clears that bar and deliberately separate from
+`SnowflakeIdGeneratorConcurrencyTest`.
 
 ## 8. How AI was used
 
