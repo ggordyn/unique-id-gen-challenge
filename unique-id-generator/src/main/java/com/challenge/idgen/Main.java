@@ -9,6 +9,8 @@ import com.challenge.idgen.snowflake.SnowflakeIdCodec;
 import com.challenge.idgen.snowflake.SnowflakeIdGenerator;
 import com.challenge.idgen.time.SystemTimeSource;
 
+import java.util.Random;
+
 public final class Main {
 
     private Main() {
@@ -26,12 +28,18 @@ public final class Main {
         }
     }
 
-    // Fallback to datacenter/worker 0,0 if the environment variables are not set or invalid
+    // Falls back to a random worker ID if the environment variables are not set or invalid, so
+    // this demo still runs with zero configuration (not stable across restarts and isntances)
     private static WorkerId resolveWorkerId(SnowflakeConfig config) {
         try {
             return new EnvironmentWorkerIdAssigner().assign(config);
         } catch (InvalidConfigurationException e) {
-            return new WorkerId(0, 0);
+            return randomWorkerId(config);
         }
+    }
+
+    static WorkerId randomWorkerId(SnowflakeConfig config) {
+        Random random = new Random();
+        return new WorkerId(random.nextInt(config.maxDatacenterId() + 1), random.nextInt(config.maxWorkerId() + 1));
     }
 }
