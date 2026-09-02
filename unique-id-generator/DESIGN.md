@@ -80,7 +80,7 @@ trade-off: a misconfigured epoch now fails on first use rather than at construct
 it used, inside a `synchronized` block:
 
 - **Clock went backward, small drift** (≤ `maxBackwardDriftMillis`, default 10ms): rather than
-  blocking (waiting for the clock to catch up), we reuse the last timestamp and extend the sequence counter, 
+  blocking (waiting for the clock to catch up), we reuse the last timestamp and extend the sequence counter,
   exactly like the same-millisecond case, only falling back to an actual wait if the sequence overflows.
   This covers routine causes: Network Time Protocol step corrections after ordinary hardware
   clock drift, a VM's clock pause, or a leap second. The trade-off: the
@@ -141,9 +141,10 @@ easy to test. `SnowflakeIdCodecTest` includes a value hand-computed independentl
 so the test proves the actual bit positions are correct rather than just that encode and decode undo each
 other. `IdGeneratorIntegrationTest` wires every real component together (real config, real env-based
 assigner, real system clock) rather than testing pieces in isolation. `SnowflakeIdGeneratorThroughputTest`
-measures the book's named "10000+ IDs/sec" requirement directly: single-threaded, against the
-real clock, asserting the actual measured rate clears that bar and deliberately separate from
-`SnowflakeIdGeneratorConcurrencyTest`.
+measures the book's named "10,000+ IDs/sec" requirement directly: single-threaded, against the
+real clock, asserting the actual measured rate clears that bar. It's deliberately kept separate
+from `SnowflakeIdGeneratorConcurrencyTest`, since thread-scheduling overhead there would make a
+throughput number noisy rather than a clean measurement of the requirement itself.
 
 ## 8. How AI was used
 
@@ -162,10 +163,11 @@ manually reviewed and rewritten.
   matching the book's own explanation, based on Twitter's original Snowflake design. Note that
   `SnowflakeIdCodec.decode()` extracts the timestamp with a signed right shift (`>>`), which
   would corrupt the decoded value once the sign bit is legitimately part of the timestamp
-  ( right at the 69-year mark) rather than at the true 64-bit capacity of the field
+  (right at the 69-year mark) rather than at the true 64-bit capacity of the field
   (~139 years). Switching that one shift to unsigned (`>>>`) would let decoding stay correct
-  all the way to the true limit instead of degrading at the documented one. This change was not applied
-  simply because the issue would still require fixing after those years elapse.
+  all the way to the true limit instead of degrading at the documented one. This wasn't applied:
+  it only matters if a planned epoch migration is ever missed, and it doesn't change
+  the documented 69-year contract, matching Twitter's convention.
 - **HTTP layer**: not built. `IdGenerator.nextId()` could be wrapped in
   `com.sun.net.httpserver` (or any framework) which would need no changes to the code above it.
 - **Worker-ID auto-assignment** (something like ZooKeeper or a DB lease table): not built
@@ -186,6 +188,6 @@ manually reviewed and rewritten.
   for a library this size. Per-branch counters inside `nextId()`
   (IDs generated, self-heals, overflow waits, hard clock-rollback failures) would be a possible addition.
 - **No defensive design (timeouts, connection pools, circuit breakers)**: not applicable here. This generator has no
-  external I/O at all (no network calls, no database, no downstream service to time out on or circuit-break against). 
+  external I/O at all (no network calls, no database, no downstream service to time out on or circuit-break against).
   Those concerns would only become relevant if a future `WorkerIdAssigner` implementation talked to something like
   ZooKeeper or a DB (§5).
